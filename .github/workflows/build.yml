@@ -1,10 +1,15 @@
-name: Build routing dat
+name: Build VPN routing data
 
 on:
   push:
     paths:
       - "data/**"
       - ".github/workflows/build.yml"
+
+  schedule:
+    # Каждый день. GitHub использует UTC.
+    - cron: "17 3 * * *"
+
   workflow_dispatch:
 
 permissions:
@@ -15,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout our repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Setup Go
@@ -23,31 +28,98 @@ jobs:
         with:
           go-version: stable
 
-      - name: Get domain-list-community builder
-        run: |
-          git clone --depth 1 https://github.com/v2fly/domain-list-community.git /tmp/dlc
+      # --------------------------------------------------
+      # Domains -> my-routes.dat
+      # --------------------------------------------------
 
-      - name: Build my-routes.dat
+      - name: Clone domain-list-community
         run: |
-          mkdir -p dist
+          git clone --depth 1 \
+            https://github.com/v2fly/domain-list-community.git \
+            /tmp/dlc
+
+      - name: Build domain rules
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/dist"
+
           cd /tmp/dlc
           go mod download
+
           go run ./ \
             --datapath="${GITHUB_WORKSPACE}/data" \
             --outputname="my-routes.dat" \
             --outputdir="${GITHUB_WORKSPACE}/dist"
 
-      - name: Commit generated file
+      # --------------------------------------------------
+      # Telegram official CIDR -> telegram-ip.dat
+      # --------------------------------------------------
+
+      - name: Clone v2fly geoip builder
+        run: |
+          git clone --depth 1 \
+            https://github.com/v2fly/geoip.git \
+            /tmp/geoip
+
+      - name: Create Telegram GeoIP config
+        run: |
+          cat > /tmp/telegram-geoip.json <<EOF
+          {
+            "input": [
+              {
+                "type": "text",
+                "action": "add",
+                "args": {
+                  "name": "telegram",
+                  "uri": "https://core.telegram.org/resources/cidr.txt"
+                }
+              }
+            ],
+            "output": [
+              {
+                "type": "v2rayGeoIPDat",
+                "action": "output",
+                "args": {
+                  "outputDir": "${GITHUB_WORKSPACE}/dist",
+                  "outputName": "telegram-ip.dat",
+                  "wantedList": ["telegram"]
+                }
+              }
+            ]
+          }
+          EOF
+
+      - name: Build Telegram IP rules
+        run: |
+          cd /tmp/geoip
+          go mod download
+          go run ./ -c /tmp/telegram-geoip.json
+
+      # Сохраняем исходный CIDR и текстом.
+      # Позже это пригодится для Android/v2rayNG.
+      - name: Save Telegram CIDR source
+        run: |
+          curl -fsSL \
+            https://core.telegram.org/resources/cidr.txt \
+            -o dist/telegram-cidr.txt
+
+      # --------------------------------------------------
+      # Commit generated files
+      # --------------------------------------------------
+
+      - name: Commit generated files
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add dist/my-routes.dat
+          git add \
+            dist/my-routes.dat \
+            dist/telegram-ip.dat \
+            dist/telegram-cidr.txt
 
           if git diff --cached --quiet; then
-            echo "No changes"
+            echo "No routing changes"
             exit 0
           fi
 
-          git commit -m "Build my-routes.dat"
+          git commit -m "Update VPN routing data"
           git push origin HEAD:${GITHUB_REF_NAME}

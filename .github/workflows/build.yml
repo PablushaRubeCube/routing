@@ -70,7 +70,8 @@ jobs:
                 "action": "add",
                 "args": {
                   "name": "telegram",
-                  "uri": "https://core.telegram.org/resources/cidr.txt"
+                  "uri": "https://core.telegram.org/resources/cidr.txt",
+                  "onlyIPType": "ipv4"
                 }
               }
             ],
@@ -98,9 +99,9 @@ jobs:
       # Позже это пригодится для Android/v2rayNG.
       - name: Save Telegram CIDR source
         run: |
-          curl -fsSL \
-            https://core.telegram.org/resources/cidr.txt \
-            -o dist/telegram-cidr.txt
+          curl -fsSL https://core.telegram.org/resources/cidr.txt \
+            | grep -E '^[0-9]+\.' \
+            > dist/telegram-cidr.txt
 
       # --------------------------------------------------
       # Commit generated files

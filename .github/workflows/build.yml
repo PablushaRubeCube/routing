@@ -6,10 +6,6 @@ on:
       - "data/**"
       - ".github/workflows/build.yml"
 
-  schedule:
-    # Каждый день. GitHub использует UTC.
-    - cron: "17 3 * * *"
-
   workflow_dispatch:
 
 permissions:
@@ -27,10 +23,6 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: stable
-
-      # --------------------------------------------------
-      # Domains -> my-routes.dat
-      # --------------------------------------------------
 
       - name: Clone domain-list-community
         run: |
@@ -50,72 +42,17 @@ jobs:
             --outputname="my-routes.dat" \
             --outputdir="${GITHUB_WORKSPACE}/dist"
 
-      # --------------------------------------------------
-      # Telegram official CIDR -> telegram-ip.dat
-      # --------------------------------------------------
-
-      - name: Clone v2fly geoip builder
+      - name: Remove obsolete Telegram files
         run: |
-          git clone --depth 1 \
-            https://github.com/v2fly/geoip.git \
-            /tmp/geoip
-
-      - name: Create Telegram GeoIP config
-        run: |
-          cat > /tmp/telegram-geoip.json <<EOF
-          {
-            "input": [
-              {
-                "type": "text",
-                "action": "add",
-                "args": {
-                  "name": "telegram",
-                  "uri": "https://core.telegram.org/resources/cidr.txt",
-                  "onlyIPType": "ipv4"
-                }
-              }
-            ],
-            "output": [
-              {
-                "type": "v2rayGeoIPDat",
-                "action": "output",
-                "args": {
-                  "outputDir": "${GITHUB_WORKSPACE}/dist",
-                  "outputName": "telegram-ip.dat",
-                  "wantedList": ["telegram"]
-                }
-              }
-            ]
-          }
-          EOF
-
-      - name: Build Telegram IP rules
-        run: |
-          cd /tmp/geoip
-          go mod download
-          go run ./ -c /tmp/telegram-geoip.json
-
-      # Сохраняем исходный CIDR и текстом.
-      # Позже это пригодится для Android/v2rayNG.
-      - name: Save Telegram CIDR source
-        run: |
-          curl -fsSL https://core.telegram.org/resources/cidr.txt \
-            | grep -E '^[0-9]+\.' \
-            > dist/telegram-cidr.txt
-
-      # --------------------------------------------------
-      # Commit generated files
-      # --------------------------------------------------
+          rm -f dist/telegram-ip.dat
+          rm -f dist/telegram-cidr.txt
 
       - name: Commit generated files
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add \
-            dist/my-routes.dat \
-            dist/telegram-ip.dat \
-            dist/telegram-cidr.txt
+          git add -A dist
 
           if git diff --cached --quiet; then
             echo "No routing changes"
